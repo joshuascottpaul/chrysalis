@@ -7,7 +7,7 @@ Current phase: 1 (Foundation). See `docs/design/` section 14 for the full timeli
 2026-05-17: PR #3a (Version Detection) reviewed and cleared by Hermione (second pass); ready to ship. PR #3b (pre-flight framework) is next, gated on first green CI run.
 2026-05-17: Josh suggested Admin API-driven discovery (Suggestion 1) and questioned hardcoded test values (Suggestion 2). Ripley filed Suggestion 1 as Phase 4 work; Suggestion 2 closed no-action.
 2026-05-17: Decision 8 reversed — repo flipped public to enable branch protection; see Decision 8 update + ADR-005.
-2026-05-18: PR #3b (Pre-flight framework, task 8) merged to main via PR https://github.com/joshuascottpaul/chrysallis/pull/1; ready for PR #4 (dry-run + release). Phase 1 task list now needs only PR #4 to ship v0.1.0.
+2026-05-18: PR #3b (Pre-flight framework, task 8) merged to main via PR https://github.com/joshuascottpaul/chrysalis/pull/1; ready for PR #4 (dry-run + release). Phase 1 task list now needs only PR #4 to ship v0.1.0.
 
 ---
 
@@ -145,7 +145,7 @@ Hermione's blocking and should-fix items (S1 2d Test-Path pre-check, S2 GiB labe
 - [ ] **N2 — `Get-PreFlightDriveRoot` non-Windows fallback wording:** returns the full input path when no drive letter is exposed, producing odd Detail strings like "install root drive '/var/lib/fms'". Phase 5 concern only. Ref: `src/lib/PreFlight.ps1` `Get-PreFlightDriveRoot`. (@misaka-coder, earliest Phase 5)
 - [ ] **N4 — `New-PreFlightCheckException` defined after first use:** PowerShell resolves at call time so it works, but top-to-bottom readers hit the calls before the definitions. Reorder for readability. Ref: `src/lib/PreFlight.ps1` lines ~461 and ~479. (@misaka-coder or @mikasa-simplifier, lowest priority)
 - [ ] **N6 — 2g remediation should quote the full `fmsadmin backup` invocation:** currently just says "Run 'fmsadmin backup'". Quote the actual recommended invocation with `-y -d <path> -t <name>` so the operator can copy-paste. Ref: `src/lib/PreFlight.ps1` 2g Fail Remediation. (@shizuku-docs, low priority)
-- [ ] **N7 — 2c's "file a bug" Remediation should name the bug tracker:** add `https://github.com/joshuascottpaul/chrysallis/issues` to the remediation text. Ref: `src/lib/PreFlight.ps1` 2c Remediation. (@misaka-coder, low priority)
+- [ ] **N7 — 2c's "file a bug" Remediation should name the bug tracker:** add `https://github.com/joshuascottpaul/chrysalis/issues` to the remediation text. Ref: `src/lib/PreFlight.ps1` 2c Remediation. (@misaka-coder, low priority)
 
 ---
 
