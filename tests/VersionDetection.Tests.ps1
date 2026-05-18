@@ -187,7 +187,7 @@ Describe 'Get-FmsVersionFromBinary' -Skip:(-not (Test-IsWindowsHost)) {
         }
 
         { Get-FmsVersionFromBinary -InstallRoot $installRoot } |
-            Should -Throw -ExpectedMessage "*fewer than three components*'21.0'*"
+            Should -Throw -ExpectedMessage "*'21.0'*fewer than three components*"
     }
 
     It 'logs an Info line on success when a LogContext is provided' {
