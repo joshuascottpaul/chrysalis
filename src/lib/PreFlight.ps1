@@ -144,20 +144,23 @@ function Invoke-PreFlightCheck2d {
     $name = 'Verify admin credentials decrypt'
     $credsPath = $Config.fms.creds_file
 
+    # Pre-check existence so the file-missing branch never depends on
+    # substring-matching Read-ChrysalisCredentials's thrown message. The
+    # try/catch below then only has to handle decrypt failures.
+    if (-not (Test-Path -LiteralPath $credsPath -PathType Leaf)) {
+        return (New-PreFlightResult -CheckId '2d' -Name $name -Status 'Fail' `
+            -Detail "Admin credentials file not found at '$credsPath'." `
+            -Remediation 'Run .\EncryptCreds.ps1 to create the credentials file. See docs/runbooks/credentials.md.')
+    }
+
     try {
         $cred = Read-ChrysalisCredentials -Path $credsPath
         # Pull only the username for the Detail line. Never store or log the
         # SecureString password.
         $userName = $cred.UserName
         return (New-PreFlightResult -CheckId '2d' -Name $name -Status 'Pass' `
-            -Detail "Admin credentials decrypted (user '$userName').")
+            -Detail "Admin credentials decrypted from '$credsPath' (user '$userName').")
     } catch {
-        $msg = $_.Exception.Message
-        if ($msg -match 'not found') {
-            return (New-PreFlightResult -CheckId '2d' -Name $name -Status 'Fail' `
-                -Detail "Admin credentials file not found at '$credsPath'." `
-                -Remediation 'Run .\EncryptCreds.ps1 to create the credentials file. See docs/runbooks/credentials.md.')
-        }
         return (New-PreFlightResult -CheckId '2d' -Name $name -Status 'Fail' `
             -Detail "Cannot decrypt credentials at '$credsPath'." `
             -Remediation 'Credentials are DPAPI-bound to the user + machine that encrypted them. Re-run .\EncryptCreds.ps1 -Force as the current user, or log in as the encrypting user. See docs/runbooks/credentials.md.')
@@ -170,7 +173,9 @@ function Get-PreFlightDriveFreeGb {
         [Parameter(Mandatory = $true)] [string] $Path
     )
 
-    # Returns free space in GB (as a double) for the volume hosting $Path.
+    # Returns free space in GiB (as a double) for the volume hosting $Path.
+    # PowerShell's 1GB literal is 1073741824 bytes (1024^3) = 1 GiB; the
+    # function name keeps "Gb" for backward-compat with existing mocks.
     # Uses [System.IO.DriveInfo] because it accepts a path-like root and
     # avoids the PSDrive providers/non-FS edge cases. Caller catches errors.
     $drive = New-Object System.IO.DriveInfo($Path)
@@ -200,8 +205,8 @@ function Invoke-PreFlightCheck2f {
     $name = 'Disk space for installer and backup'
     # Threshold is intentionally conservative for v0. Make this configurable
     # in Phase 4 if real-world ops complain. Real-world FMS installers are
-    # ~1-2 GB; backups vary widely. 5 GB is generous; tight enough to catch
-    # a near-full disk.
+    # ~1-2 GiB; backups vary widely. 5 GiB is generous; tight enough to catch
+    # a near-full disk. (PowerShell's 1GB literal is 1024^3 = 1 GiB.)
     $minFreeGb = 5
 
     $installRoot = $Config.fms.install_root_windows
@@ -228,25 +233,25 @@ function Invoke-PreFlightCheck2f {
     if ($errors.Count -gt 0) {
         return (New-PreFlightResult -CheckId '2f' -Name $name -Status 'Fail' `
             -Detail ($errors -join ' ') `
-            -Remediation "Free up space on the named drive(s), or change install_root_windows / backup_root in config.json to a drive with at least ${minFreeGb} GB free.")
+            -Remediation "Free up space on the named drive(s), or change install_root_windows / backup_root in config.json to a drive with at least ${minFreeGb} GiB free.")
     }
 
     $failingDrives = @()
     if ($installFreeGb -lt $minFreeGb) {
-        $failingDrives += "install root drive '$installDrive' has $installFreeGb GB free (need $minFreeGb GB)"
+        $failingDrives += "install root drive '$installDrive' has $installFreeGb GiB free (need $minFreeGb GiB)"
     }
     if ($backupFreeGb -lt $minFreeGb) {
-        $failingDrives += "backup root drive '$backupDrive' has $backupFreeGb GB free (need $minFreeGb GB)"
+        $failingDrives += "backup root drive '$backupDrive' has $backupFreeGb GiB free (need $minFreeGb GiB)"
     }
 
     if ($failingDrives.Count -gt 0) {
         return (New-PreFlightResult -CheckId '2f' -Name $name -Status 'Fail' `
             -Detail ($failingDrives -join '; ') `
-            -Remediation "Free up space on the named drive(s), or change install_root_windows / backup_root in config.json to a drive with at least ${minFreeGb} GB free.")
+            -Remediation "Free up space on the named drive(s), or change install_root_windows / backup_root in config.json to a drive with at least ${minFreeGb} GiB free.")
     }
 
     return (New-PreFlightResult -CheckId '2f' -Name $name -Status 'Pass' `
-        -Detail "Install root drive '$installDrive' has $installFreeGb GB free; backup root drive '$backupDrive' has $backupFreeGb GB free.")
+        -Detail "Install root drive '$installDrive' has $installFreeGb GiB free; backup root drive '$backupDrive' has $backupFreeGb GiB free.")
 }
 
 function Invoke-PreFlightCheck2e {
@@ -294,7 +299,10 @@ function Invoke-PreFlightCheck2e {
     }
 
     if ($found.Count -gt 1) {
-        $list = ($found | ForEach-Object { $_.FullName }) -join ', '
+        # Sort by FullName so re-runs produce a deterministic list ordering
+        # in the operator-facing Detail string (filesystem enumeration order
+        # is not guaranteed).
+        $list = ($found | Sort-Object -Property FullName | ForEach-Object { $_.FullName }) -join ', '
         return (New-PreFlightResult -CheckId '2e' -Name $name -Status 'Fail' `
             -Detail "Found $($found.Count) license files under '$databaseServer': $list." `
             -Remediation 'Multiple license files is unusual. Verify which is current via FMS admin console and remove stale ones.')

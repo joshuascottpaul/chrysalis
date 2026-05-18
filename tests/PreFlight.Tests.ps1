@@ -5,11 +5,11 @@
 # [System.IO.DriveInfo], Get-ChildItem) so the bulk of the suite runs on
 # any platform. Filesystem-dependent tests inject paths under $TestDrive.
 
-# Test-IsWindowsHost lives at file top-level (not inside BeforeAll) because
-# Pester 5 evaluates -Skip parameters on Describe blocks at Discovery time,
-# which runs BEFORE BeforeAll. A function only defined in BeforeAll is
-# unavailable during Discovery and the -Skip expression throws
-# CommandNotFoundException.
+# Test-IsWindowsHost is kept at file top-level (not inside BeforeAll) as
+# documentation of the Pester 5 Discovery-time gotcha that bit PR #3a.
+# No Describe in this file is currently Windows-gated because all heavy
+# dependencies are mocked, but the pattern is preserved for any future
+# Windows-only addition to this test file.
 function Test-IsWindowsHost {
     return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
 }
@@ -192,7 +192,14 @@ Describe 'Invoke-PreFlightCheck2c' {
 Describe 'Invoke-PreFlightCheck2d' {
 
     BeforeEach {
-        $script:cfg = New-TestConfig -InstallRoot 'X:\fms' -BackupRoot 'Y:\backups' -CredsFile 'Z:\creds.xml'
+        # Real on-disk creds file under $TestDrive so the new Test-Path
+        # pre-check in Invoke-PreFlightCheck2d sees the file as present.
+        # The "file not found" test points at a sibling path that does NOT
+        # exist; it must not rely on Read-ChrysalisCredentials throwing.
+        $script:credsFile = Join-Path -Path $TestDrive -ChildPath ('creds-' + [guid]::NewGuid().ToString('N') + '.xml')
+        Set-Content -LiteralPath $script:credsFile -Value '<creds/>' -Force
+        $script:missingCredsFile = Join-Path -Path $TestDrive -ChildPath ('missing-creds-' + [guid]::NewGuid().ToString('N') + '.xml')
+        $script:cfg = New-TestConfig -InstallRoot 'X:\fms' -BackupRoot 'Y:\backups' -CredsFile $script:credsFile
     }
 
     It 'returns Pass with the username (and never the password) when decrypt succeeds' {
@@ -201,30 +208,36 @@ Describe 'Invoke-PreFlightCheck2d' {
         }
         $r = Invoke-PreFlightCheck2d -Config $script:cfg
         $r.Status | Should -Be 'Pass'
-        $r.Detail | Should -Match "Admin credentials decrypted \(user 'fmsadmin'\)"
+        $r.Detail | Should -Match "Admin credentials decrypted from '"
+        $r.Detail | Should -Match "\(user 'fmsadmin'\)"
+        # The Pass Detail now includes the creds file path. Assert it.
+        $escapedPath = [regex]::Escape($script:credsFile)
+        $r.Detail | Should -Match $escapedPath
         # Belt-and-braces: assert the sentinel password is NOT in the result.
         $r.Detail      | Should -Not -Match 'SENTINEL-SECRET'
         $r.Remediation | Should -Not -Match 'SENTINEL-SECRET'
     }
 
     It 'returns Fail with file-not-found remediation when creds file is missing' {
-        Mock -CommandName Read-ChrysalisCredentials -MockWith {
-            throw "chrysalis: creds file 'Z:\creds.xml' not found. Run EncryptCreds.ps1 to create it. See docs/runbooks/credentials.md."
-        }
-        $r = Invoke-PreFlightCheck2d -Config $script:cfg
+        # No Read-ChrysalisCredentials mock: the Test-Path pre-check
+        # short-circuits before the function is ever called.
+        $cfg = New-TestConfig -InstallRoot 'X:\fms' -BackupRoot 'Y:\backups' -CredsFile $script:missingCredsFile
+        $r = Invoke-PreFlightCheck2d -Config $cfg
         $r.Status      | Should -Be 'Fail'
-        $r.Detail      | Should -Match "Admin credentials file not found at 'Z:\\creds\.xml'"
+        $escapedMissing = [regex]::Escape($script:missingCredsFile)
+        $r.Detail      | Should -Match ("Admin credentials file not found at '" + $escapedMissing + "'")
         $r.Remediation | Should -Match 'EncryptCreds\.ps1'
         $r.Remediation | Should -Match 'credentials\.md'
     }
 
     It 'returns Fail with decrypt remediation when DPAPI decrypt fails' {
         Mock -CommandName Read-ChrysalisCredentials -MockWith {
-            throw "chrysalis: cannot decrypt creds file 'Z:\creds.xml': bad data."
+            throw "chrysalis: cannot decrypt creds file: bad data."
         }
         $r = Invoke-PreFlightCheck2d -Config $script:cfg
         $r.Status      | Should -Be 'Fail'
-        $r.Detail      | Should -Match "Cannot decrypt credentials at 'Z:\\creds\.xml'"
+        $escapedPath = [regex]::Escape($script:credsFile)
+        $r.Detail      | Should -Match ("Cannot decrypt credentials at '" + $escapedPath + "'")
         $r.Remediation | Should -Match 'DPAPI'
         $r.Remediation | Should -Match 'EncryptCreds\.ps1'
     }
@@ -240,7 +253,7 @@ Describe 'Invoke-PreFlightCheck2f' {
         $script:cfg = New-TestConfig -InstallRoot $script:installRoot -BackupRoot $script:backupRoot -CredsFile 'X:\creds.xml'
     }
 
-    It 'returns Pass when both drives have at least 5 GB free' {
+    It 'returns Pass when both drives have at least 5 GiB free' {
         # Mock the helpers exposed by PreFlight.ps1 to keep the assertion
         # platform-agnostic. Real-disk reads are exercised manually.
         Mock -CommandName Get-PreFlightDriveFreeGb -MockWith { return 100 }
@@ -250,7 +263,7 @@ Describe 'Invoke-PreFlightCheck2f' {
         }
         $r = Invoke-PreFlightCheck2f -Config $script:cfg
         $r.Status | Should -Be 'Pass'
-        $r.Detail | Should -Match 'has 100 GB free'
+        $r.Detail | Should -Match 'has 100 GiB free'
     }
 
     It 'returns Fail naming the install root drive when it is below threshold' {
@@ -264,8 +277,8 @@ Describe 'Invoke-PreFlightCheck2f' {
         $r = Invoke-PreFlightCheck2f -Config $script:cfg
         $r.Status      | Should -Be 'Fail'
         $r.Detail      | Should -Match "install root drive 'X:'"
-        $r.Detail      | Should -Match '1 GB free'
-        $r.Remediation | Should -Match '5 GB'
+        $r.Detail      | Should -Match '1 GiB free'
+        $r.Remediation | Should -Match '5 GiB'
     }
 
     It 'returns Fail naming the backup root drive when it is below threshold' {
@@ -279,7 +292,7 @@ Describe 'Invoke-PreFlightCheck2f' {
         $r = Invoke-PreFlightCheck2f -Config $script:cfg
         $r.Status | Should -Be 'Fail'
         $r.Detail | Should -Match "backup root drive 'Y:'"
-        $r.Detail | Should -Match '2 GB free'
+        $r.Detail | Should -Match '2 GiB free'
     }
 
     It 'returns Fail when the free-space lookup itself throws' {
@@ -424,8 +437,12 @@ Describe 'Invoke-PreFlight (coordinator)' {
         $fresh = Join-Path -Path $script:backupRoot -ChildPath 'fresh.fmp12'
         Set-Content -LiteralPath $fresh -Value 'fresh db'
 
+        # Real on-disk creds file so 2d's Test-Path pre-check passes.
+        $script:credsFile = Join-Path -Path $TestDrive -ChildPath ('coord-creds-' + [guid]::NewGuid().ToString('N') + '.xml')
+        Set-Content -LiteralPath $script:credsFile -Value '<creds/>' -Force
+
         $script:cfg = New-TestConfig -InstallRoot $script:installRoot -BackupRoot $script:backupRoot `
-            -CredsFile 'X:\creds.xml' -TargetVersion '21.0.4' -InstallerKeys @('21.0.3', '21.0.4')
+            -CredsFile $script:credsFile -TargetVersion '21.0.4' -InstallerKeys @('21.0.3', '21.0.4')
         $script:cred = New-TestCredential
 
         Mock -CommandName Get-FmsVersion -MockWith { return '21.0.3' }
