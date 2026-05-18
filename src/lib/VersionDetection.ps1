@@ -297,9 +297,87 @@ function Read-AdminApiVersion {
     return $null
 }
 
+function Get-AdminApiErrorDetailInternal {
+    # Pure message-shaping seam. Given pre-extracted error details (kind,
+    # status code, response body, network status, raw message), produces the
+    # chrysalis-shaped error text and optional remediation lines. No I/O, no
+    # reflection, no exception unwrapping - that's all in
+    # Convert-AdminApiException above this seam. Existing for testability:
+    # real System.Net.WebException construction with a populated Response is
+    # impractical in a unit test (the private-field reflection path is
+    # statically typed and brittle). Real WebException unpacking is exercised
+    # manually on the test FMS host; unit tests cover this seam directly.
+    #
+    # $Kind is one of: 'Auth' | 'Http' | 'Network' | 'Unknown'.
+    # Returns a hashtable with: Message (string), Remediations (string[]).
+    param(
+        [Parameter(Mandatory = $true)] [string] $Kind,
+        [Parameter(Mandatory = $true)] [string] $Url,
+        [Parameter(Mandatory = $true)] [string] $Phase,
+        [Parameter(Mandatory = $false)] [int]    $StatusCode = 0,
+        [Parameter(Mandatory = $false)] [string] $BodyText,
+        [Parameter(Mandatory = $false)] [string] $NetworkStatus,
+        [Parameter(Mandatory = $false)] [string] $RawMessage
+    )
+
+    $remediations = @()
+    $bodySnippet = $null
+    if (-not [string]::IsNullOrWhiteSpace($BodyText)) {
+        $bodySnippet = $BodyText
+        try {
+            $parsed = $BodyText | ConvertFrom-Json -ErrorAction Stop
+            if ($null -ne $parsed -and $null -ne $parsed.PSObject.Properties['messages']) {
+                $msgs = @($parsed.messages)
+                if ($msgs.Count -gt 0 -and $null -ne $msgs[0].PSObject.Properties['message']) {
+                    $bodySnippet = [string] $msgs[0].message
+                }
+            }
+        } catch {
+            # body isn't JSON; fall through with the raw snippet
+        }
+        # Belt-and-braces: a server-side error message could in principle
+        # echo the Authorization header. Strip any 'Bearer <token>' pattern
+        # before it makes its way into the log.
+        $bodySnippet = $bodySnippet -replace 'Bearer\s+\S+', 'Bearer [REDACTED]'
+        if ($bodySnippet.Length -gt 200) {
+            $bodySnippet = $bodySnippet.Substring(0, 200) + '...'
+        }
+    }
+
+    switch ($Kind) {
+        'Auth' {
+            $msg = "chrysalis: TLS handshake failed contacting Admin API at '$Url': $RawMessage. The FMS admin certificate is not trusted by the system cert store. Fix the FMS admin cert configuration (install the issuing CA into the Windows trust store, or rotate the FMS admin cert) - chrysalis deliberately does not provide a -SkipCertificateCheck bypass."
+            $remediations += "Trust the FMS admin cert: import the issuing certificate authority into LocalMachine\Root, or replace the FMS admin cert with one chained to a CA already in the system trust store."
+            return @{ Message = $msg; Remediations = $remediations }
+        }
+        'Http' {
+            if ($StatusCode -eq 401 -or $StatusCode -eq 403) {
+                $msg = "chrysalis: Admin API rejected credentials at '$Url' (HTTP $StatusCode). Credentials may be wrong or the FMS admin password may have rotated; re-run EncryptCreds.ps1 with the current password. See docs/runbooks/credentials.md."
+                $remediations += "Re-run EncryptCreds.ps1 -Force as the user that runs chrysalis. See docs/runbooks/credentials.md ('When you need to re-encrypt')."
+                return @{ Message = $msg; Remediations = $remediations }
+            }
+            $snippetText = if ([string]::IsNullOrWhiteSpace($bodySnippet)) { '' } else { " ServerMessage='$bodySnippet'" }
+            $msg = "chrysalis: Admin API call to '$Url' failed during $Phase with HTTP $StatusCode.$snippetText"
+            return @{ Message = $msg; Remediations = $remediations }
+        }
+        'Network' {
+            $msg = "chrysalis: FMS Admin API not reachable at '$Url' during $Phase ($NetworkStatus). Is the FileMaker Server service running and listening on the configured admin_port?"
+            $remediations += "Check service state: Get-Service 'FileMaker Server'. Verify admin_port in config.json matches the port FMS is listening on."
+            return @{ Message = $msg; Remediations = $remediations }
+        }
+        default {
+            $msg = "chrysalis: Admin API call to '$Url' failed during ${Phase}: $RawMessage"
+            return @{ Message = $msg; Remediations = $remediations }
+        }
+    }
+}
+
 function Convert-AdminApiException {
     # Translates a low-level network/HTTP exception into a chrysalis-shaped
     # throw with operator-actionable remediation. Always throws; never returns.
+    # Real exception-unwrapping lives here; the message-shaping lives in
+    # Get-AdminApiErrorDetailInternal so it can be unit-tested without
+    # constructing a real WebException with a populated Response.
     param(
         [Parameter(Mandatory = $true)] $Caught,
         [Parameter(Mandatory = $true)] [string] $Url,
@@ -308,7 +386,6 @@ function Convert-AdminApiException {
     )
 
     $ex = $Caught.Exception
-    $msg = $null
 
     # Walk the exception chain to find the meaningful inner type. PowerShell
     # 5.1's Invoke-RestMethod wraps the underlying exception in a
@@ -326,92 +403,47 @@ function Convert-AdminApiException {
         $cursor = $cursor.InnerException
     }
 
-    if ($null -ne $authException) {
-        $msg = "chrysalis: TLS handshake failed contacting Admin API at '$Url': $($authException.Message). The FMS admin certificate is not trusted by the system cert store. Fix the FMS admin cert configuration (install the issuing CA into the Windows trust store, or rotate the FMS admin cert) - chrysalis deliberately does not provide a -SkipCertificateCheck bypass."
-        if ($null -ne $LogContext) {
-            Write-Log -Context $LogContext -Severity Error -Message $msg
-            Write-Log -Context $LogContext -Severity Remediation -Message "Trust the FMS admin cert: import the issuing certificate authority into LocalMachine\Root, or replace the FMS admin cert with one chained to a CA already in the system trust store."
-        }
-        throw $msg
-    }
+    $detail = $null
 
-    if ($null -ne $webException) {
+    if ($null -ne $authException) {
+        $detail = Get-AdminApiErrorDetailInternal -Kind 'Auth' -Url $Url -Phase $Phase -RawMessage $authException.Message
+    } elseif ($null -ne $webException) {
         $response = $webException.Response
         if ($null -ne $response) {
             $statusCode = 0
             try {
                 $statusCode = [int] $response.StatusCode
             } catch { }
-            $bodySnippet = $null
+            $bodyText = $null
             try {
                 $stream = $response.GetResponseStream()
                 if ($null -ne $stream) {
                     $reader = New-Object System.IO.StreamReader($stream)
-                    $body = $reader.ReadToEnd()
+                    $bodyText = $reader.ReadToEnd()
                     $reader.Dispose()
-                    # Extract a server-supplied message if the body is JSON.
-                    # Be conservative: clamp to 200 chars so a misbehaving
-                    # server cannot dump a huge payload into the log line.
-                    if (-not [string]::IsNullOrWhiteSpace($body)) {
-                        $bodySnippet = $body
-                        try {
-                            $parsed = $body | ConvertFrom-Json -ErrorAction Stop
-                            if ($null -ne $parsed -and $null -ne $parsed.PSObject.Properties['messages']) {
-                                $msgs = @($parsed.messages)
-                                if ($msgs.Count -gt 0 -and $null -ne $msgs[0].PSObject.Properties['message']) {
-                                    $bodySnippet = [string] $msgs[0].message
-                                }
-                            }
-                        } catch {
-                            # body isn't JSON; fall through with the raw snippet
-                        }
-                        # Belt-and-braces: a server-side error message could in
-                        # principle echo the Authorization header. Strip any
-                        # 'Bearer <token>' pattern before logging.
-                        $bodySnippet = $bodySnippet -replace 'Bearer\s+\S+', 'Bearer [REDACTED]'
-                        if ($bodySnippet.Length -gt 200) {
-                            $bodySnippet = $bodySnippet.Substring(0, 200) + '...'
-                        }
-                    }
                 }
             } catch {
                 # Body read failed; that's fine, we still have the status code.
             }
-
-            if ($statusCode -eq 401 -or $statusCode -eq 403) {
-                $msg = "chrysalis: Admin API rejected credentials at '$Url' (HTTP $statusCode). Credentials may be wrong or the FMS admin password may have rotated; re-run EncryptCreds.ps1 with the current password. See docs/runbooks/credentials.md."
-                if ($null -ne $LogContext) {
-                    Write-Log -Context $LogContext -Severity Error -Message $msg
-                    Write-Log -Context $LogContext -Severity Remediation -Message "Re-run EncryptCreds.ps1 -Force as the user that runs chrysalis. See docs/runbooks/credentials.md ('When you need to re-encrypt')."
-                }
-                throw $msg
-            }
-
-            $snippetText = if ([string]::IsNullOrWhiteSpace($bodySnippet)) { '' } else { " ServerMessage='$bodySnippet'" }
-            $msg = "chrysalis: Admin API call to '$Url' failed during $Phase with HTTP $statusCode.$snippetText"
-            if ($null -ne $LogContext) {
-                Write-Log -Context $LogContext -Severity Error -Message $msg
-            }
-            throw $msg
+            $detail = Get-AdminApiErrorDetailInternal -Kind 'Http' -Url $Url -Phase $Phase -StatusCode $statusCode -BodyText $bodyText
+        } else {
+            # No response object: connection-level failure (refused, reset, DNS,
+            # service not running).
+            $detail = Get-AdminApiErrorDetailInternal -Kind 'Network' -Url $Url -Phase $Phase -NetworkStatus ([string] $webException.Status)
         }
-
-        # No response object: connection-level failure (refused, reset, DNS,
-        # service not running).
-        $msg = "chrysalis: FMS Admin API not reachable at '$Url' during $Phase ($($webException.Status)). Is the FileMaker Server service running and listening on the configured admin_port?"
-        if ($null -ne $LogContext) {
-            Write-Log -Context $LogContext -Severity Error -Message $msg
-            Write-Log -Context $LogContext -Severity Remediation -Message "Check service state: Get-Service 'FileMaker Server'. Verify admin_port in config.json matches the port FMS is listening on."
-        }
-        throw $msg
+    } else {
+        # Catch-all. Preserve the original message; the operator can chase the
+        # stack trace from the log.
+        $detail = Get-AdminApiErrorDetailInternal -Kind 'Unknown' -Url $Url -Phase $Phase -RawMessage $ex.Message
     }
 
-    # Catch-all. Preserve the original message; the operator can chase the
-    # stack trace from the log.
-    $msg = "chrysalis: Admin API call to '$Url' failed during ${Phase}: $($ex.Message)"
     if ($null -ne $LogContext) {
-        Write-Log -Context $LogContext -Severity Error -Message $msg
+        Write-Log -Context $LogContext -Severity Error -Message $detail.Message
+        foreach ($r in $detail.Remediations) {
+            Write-Log -Context $LogContext -Severity Remediation -Message $r
+        }
     }
-    throw $msg
+    throw $detail.Message
 }
 
 function Get-FmsVersion {

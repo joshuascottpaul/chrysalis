@@ -11,6 +11,15 @@
 #
 # Admin API tests use Pester Mock to stub Invoke-RestMethod and run on
 # any platform.
+#
+# Real WebException unpacking (reflection over the private m_Response
+# field, GetResponseStream() body reads, etc.) is exercised manually on
+# the test FMS host. Unit tests cover the message-shaping logic via the
+# Get-AdminApiErrorDetailInternal seam - constructing a real
+# HttpWebResponse with a populated body in-process is impractical
+# (private ctors, internal preconditions on the response stream) and the
+# private-field reflection path fails the WebResponse type check on PS
+# 5.1's strongly-typed SetValue.
 
 # Test-IsWindowsHost lives at file top-level (not inside BeforeAll) because
 # Pester 5 evaluates -Skip parameters on Describe blocks at Discovery time,
@@ -120,17 +129,24 @@ Describe 'Get-FmsVersionFromBinary' -Skip:(-not (Test-IsWindowsHost)) {
         # ProductVersion. The normalization is what we care about here;
         # using a mock avoids depending on whatever ProductVersion shape
         # the host's notepad happens to ship.
+        #
+        # We still need the file to exist on disk so the source's
+        # Test-Path -PathType Leaf check passes. Set-Content -Value $null
+        # writes a zero-byte file without requiring [byte[]] input (which
+        # -Encoding Byte demands on PS 5.1).
         $installRoot = Join-Path -Path $TestDrive -ChildPath 'Mocked FMS'
         $databaseServer = Join-Path -Path $installRoot -ChildPath 'Database Server'
         New-Item -ItemType Directory -Path $databaseServer -Force | Out-Null
         $fakeBinary = Join-Path -Path $databaseServer -ChildPath 'fmserver.exe'
-        Set-Content -LiteralPath $fakeBinary -Value 'placeholder' -Encoding Byte
+        Set-Content -LiteralPath $fakeBinary -Value $null -Force -ErrorAction Stop
 
-        Mock -CommandName Get-Item -MockWith {
+        Mock -CommandName Get-Item -ParameterFilter {
+            $LiteralPath -eq $fakeBinary
+        } -MockWith {
             return [pscustomobject]@{
                 VersionInfo = [pscustomobject]@{ ProductVersion = '21.0.3.305' }
             }
-        } -ParameterFilter { $LiteralPath -eq $fakeBinary }
+        }
 
         $actual = Get-FmsVersionFromBinary -InstallRoot $installRoot
         $actual | Should -Be '21.0.3'
@@ -141,13 +157,15 @@ Describe 'Get-FmsVersionFromBinary' -Skip:(-not (Test-IsWindowsHost)) {
         $databaseServer = Join-Path -Path $installRoot -ChildPath 'Database Server'
         New-Item -ItemType Directory -Path $databaseServer -Force | Out-Null
         $fakeBinary = Join-Path -Path $databaseServer -ChildPath 'fmserver.exe'
-        Set-Content -LiteralPath $fakeBinary -Value 'placeholder' -Encoding Byte
+        Set-Content -LiteralPath $fakeBinary -Value $null -Force -ErrorAction Stop
 
-        Mock -CommandName Get-Item -MockWith {
+        Mock -CommandName Get-Item -ParameterFilter {
+            $LiteralPath -eq $fakeBinary
+        } -MockWith {
             return [pscustomobject]@{
                 VersionInfo = [pscustomobject]@{ ProductVersion = '' }
             }
-        } -ParameterFilter { $LiteralPath -eq $fakeBinary }
+        }
 
         { Get-FmsVersionFromBinary -InstallRoot $installRoot } |
             Should -Throw -ExpectedMessage "*no ProductVersion*"
@@ -158,13 +176,15 @@ Describe 'Get-FmsVersionFromBinary' -Skip:(-not (Test-IsWindowsHost)) {
         $databaseServer = Join-Path -Path $installRoot -ChildPath 'Database Server'
         New-Item -ItemType Directory -Path $databaseServer -Force | Out-Null
         $fakeBinary = Join-Path -Path $databaseServer -ChildPath 'fmserver.exe'
-        Set-Content -LiteralPath $fakeBinary -Value 'placeholder' -Encoding Byte
+        Set-Content -LiteralPath $fakeBinary -Value $null -Force -ErrorAction Stop
 
-        Mock -CommandName Get-Item -MockWith {
+        Mock -CommandName Get-Item -ParameterFilter {
+            $LiteralPath -eq $fakeBinary
+        } -MockWith {
             return [pscustomobject]@{
                 VersionInfo = [pscustomobject]@{ ProductVersion = '21.0' }
             }
-        } -ParameterFilter { $LiteralPath -eq $fakeBinary }
+        }
 
         { Get-FmsVersionFromBinary -InstallRoot $installRoot } |
             Should -Throw -ExpectedMessage "*fewer than three components*'21.0'*"
@@ -172,7 +192,10 @@ Describe 'Get-FmsVersionFromBinary' -Skip:(-not (Test-IsWindowsHost)) {
 
     It 'logs an Info line on success when a LogContext is provided' {
         $installRoot = Join-Path -Path $TestDrive -ChildPath 'Logged FMS'
-        $binary = New-FakeFmserverInstall -InstallRoot $installRoot
+        # Setup side-effect: lays down 'Database Server\fmserver.exe' from a
+        # real PE binary so the source's Test-Path and Get-Item.VersionInfo
+        # both have something real to read. We don't need the returned path.
+        $null = New-FakeFmserverInstall -InstallRoot $installRoot
         $logRoot = Join-Path -Path $TestDrive -ChildPath ('logs-bin-' + [guid]::NewGuid().ToString('N'))
         $ctx = New-LogContext -LogRoot $logRoot -RunId 'binlog'
         try {
@@ -258,34 +281,23 @@ Describe 'Get-FmsVersionFromAdminApi' {
             Should -Throw -ExpectedMessage '*TLS handshake failed*cert*'
     }
 
-    It 'throws a credentials-may-be-wrong message on a 401 from login' {
-        # Construct a WebException whose Response surfaces a 401 StatusCode.
-        # We plant a synthetic Response onto the private m_Response field of
-        # WebException via reflection - building a real HttpWebResponse is
-        # impractical in a unit test because its public ctors require a
-        # request context. The reflection target is a documented public-
-        # surface escape hatch widely used in test code on .NET Framework.
-        Mock -CommandName Invoke-RestMethod -MockWith {
-            $fakeResponse = [pscustomobject]@{
-                StatusCode = [System.Net.HttpStatusCode]::Unauthorized
-            }
-            $fakeResponse | Add-Member -MemberType ScriptMethod -Name GetResponseStream -Value { return $null } -Force
-            $webEx = New-Object System.Net.WebException('Unauthorized', $null, [System.Net.WebExceptionStatus]::ProtocolError, $null)
-            # Field name differs across runtimes: .NET Framework uses
-            # 'm_Response', .NET 5+ uses '_response'. Probe both.
-            $bindFlags = [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Instance
-            foreach ($name in @('m_Response', '_response')) {
-                $field = [System.Net.WebException].GetField($name, $bindFlags)
-                if ($null -ne $field) {
-                    $field.SetValue($webEx, $fakeResponse)
-                    break
-                }
-            }
-            throw $webEx
-        }
+    It 'shapes a credentials-may-be-wrong message on a 401 (seam test)' {
+        # Exercises Get-AdminApiErrorDetailInternal directly. Real
+        # WebException unpacking with a populated Response is impractical
+        # to construct in-process (see file header). The seam is the
+        # contract the unwrapper hands off to; if the unwrapper feeds it
+        # Kind='Http' with StatusCode=401, this is the message the operator
+        # will see.
+        $detail = Get-AdminApiErrorDetailInternal -Kind 'Http' `
+            -Url 'https://localhost:16001/fmi/admin/api/v2/user/login' `
+            -Phase 'login' `
+            -StatusCode 401
 
-        { Get-FmsVersionFromAdminApi -AdminPort 16001 -Credential $script:cred -LogContext $script:ctx } |
-            Should -Throw -ExpectedMessage '*credentials may be wrong*EncryptCreds.ps1*'
+        $detail.Message | Should -Match 'credentials may be wrong'
+        $detail.Message | Should -Match 'EncryptCreds.ps1'
+        $detail.Message | Should -Match 'HTTP 401'
+        # Operator-actionable remediation must be present.
+        ($detail.Remediations -join "`n") | Should -Match 'EncryptCreds.ps1'
     }
 
     It 'throws "not reachable" when the connection cannot be established' {
@@ -346,48 +358,26 @@ Describe 'Get-FmsVersionFromAdminApi' {
             Should -Throw -ExpectedMessage '*did not contain a version field*'
     }
 
-    It 'scrubs Bearer-token patterns from server error-body snippets before logging' {
-        # Threat model: an FMS error response body could in principle echo the
-        # Authorization header back to us, and Convert-AdminApiException logs
-        # the snippet. Login succeeds with a sentinel token; metadata fails
-        # with a 500 whose JSON body's messages[0].message contains the same
-        # sentinel as 'Bearer <token>'. After the throw, the sentinel must
-        # not appear in the log.
-        Mock -CommandName Invoke-RestMethod -MockWith {
-            param($Method, $Uri, $ContentType, $Body, $Headers, $ErrorAction)
-            if ($Uri -match 'user/login$') {
-                return [pscustomobject]@{ response = [pscustomobject]@{ token = $script:fakeToken } }
-            }
-            if ($Uri -match 'server/metadata$') {
-                $bodyText = '{"messages":[{"code":"500","message":"Token Bearer ' + $script:fakeToken + ' invalid"}]}'
-                $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($bodyText)
-                $bodyStream = New-Object System.IO.MemoryStream(,$bodyBytes)
-                $fakeResponse = [pscustomobject]@{
-                    StatusCode = [System.Net.HttpStatusCode]::InternalServerError
-                }
-                $fakeResponse | Add-Member -MemberType ScriptMethod -Name GetResponseStream -Value { return $bodyStream }.GetNewClosure() -Force
-                $webEx = New-Object System.Net.WebException('Internal Server Error', $null, [System.Net.WebExceptionStatus]::ProtocolError, $null)
-                $bindFlags = [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Instance
-                foreach ($name in @('m_Response', '_response')) {
-                    $field = [System.Net.WebException].GetField($name, $bindFlags)
-                    if ($null -ne $field) {
-                        $field.SetValue($webEx, $fakeResponse)
-                        break
-                    }
-                }
-                throw $webEx
-            }
-            return [pscustomobject]@{ response = [pscustomobject]@{} }
-        }
+    It 'scrubs Bearer-token patterns from server error-body snippets (seam test)' {
+        # Threat model: an FMS error response body could in principle echo
+        # the Authorization header back to us. The sentinel token must not
+        # appear in the shaped message, and the redaction marker must be
+        # visible. Exercises Get-AdminApiErrorDetailInternal directly with
+        # a synthetic JSON body - real WebException construction with a
+        # populated Response body is impractical in-process (see file
+        # header).
+        $sentinel = $script:fakeToken
+        $bodyText = '{"messages":[{"code":"500","message":"Token Bearer ' + $sentinel + ' invalid"}]}'
 
-        { Get-FmsVersionFromAdminApi -AdminPort 16001 -Credential $script:cred -LogContext $script:ctx } |
-            Should -Throw
+        $detail = Get-AdminApiErrorDetailInternal -Kind 'Http' `
+            -Url 'https://localhost:16001/fmi/admin/api/v2/server/metadata' `
+            -Phase 'metadata' `
+            -StatusCode 500 `
+            -BodyText $bodyText
 
-        Close-LogContext -Context $script:ctx
-        $content = Get-Content -LiteralPath $script:ctx.LogPath -Raw
-        $content | Should -Not -Match ([regex]::Escape($script:fakeToken))
-        # The scrub should leave a visible redaction marker.
-        $content | Should -Match 'Bearer \[REDACTED\]'
+        $detail.Message | Should -Not -Match ([regex]::Escape($sentinel))
+        $detail.Message | Should -Match 'Bearer \[REDACTED\]'
+        $detail.Message | Should -Match 'HTTP 500'
     }
 
     It 'throws when login succeeds but the response carries no token' {

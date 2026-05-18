@@ -25,7 +25,8 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $targets = @('src', 'tests')
+          # PSSA runs on src/ only. Pester idioms (mock parameter signatures, $TestDrive helpers) produce too many false positives in tests/; test correctness is verified by execution.
+          $targets = @('src')
           $settingsPath = Join-Path $PWD 'PSScriptAnalyzerSettings.psd1'
           $results = @()
           foreach ($t in $targets) {
