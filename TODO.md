@@ -121,6 +121,19 @@ Items Hermione flagged during PR #1 review. Not blocking PR #2.
 - [ ] **N4 — `Get-Content -Raw` in runbook:** `docs/runbooks/credentials.md` line ~24 calls `Get-Content ... | ConvertFrom-Json` without `-Raw`. Works in 5.1 (line-array gets joined), but inconsistent with `Config.ps1` style. Optional fix. (@shizuku-docs)
 - [ ] **N5 — Runbook references `.\chrysalis.ps1 -DryRun` before that entry point exists:** flag in the runbook with "(coming in v0.1.0)" or generalize until PR #4 lands the entry point. (@shizuku-docs)
 
+### From PR #3a review (Hermione, second pass, 2026-05-17)
+
+- [ ] **S2 — Coordinator `admin_port` pre-check:** `Get-FmsVersion` casts `[int] $Config.fms.admin_port` without verifying presence. Parser already guards, but a one-line guard here would give a clearer error to programmatic callers. Ref: `src/lib/VersionDetection.ps1` `Get-FmsVersion`. (@misaka-coder, low priority)
+- [ ] **S3 — Misleading "script-scoped" comment:** file header implies private helpers but PowerShell `.ps1` dot-source exports every top-level function. Fix the comment (or promote to `.psm1` + `Export-ModuleMember` — overkill). Ref: `src/lib/VersionDetection.ps1` file header. (@misaka-coder, low priority)
+- [x] **S5 — Preemptive PSSA worry on `Convert-AdminApiException`:** Hermione confirmed `Convert-` is approved and won't flag. Logged as "no action needed" in case the flagged-anyway note in Misaka's report leads someone to rename without checking. (closed — no action)
+- [ ] **S7 — PE-VersionInfo test should `Set-ItResult -Skipped` on stripped images:** rather than silently passing the regex check when ProductVersion is empty. Ref: `tests/VersionDetection.Tests.ps1` happy-path binary test. (@kaylee-tests, low priority)
+- [ ] **N1 — Capitalization mismatch in 401 test expectation:** source has `"Credentials"`, test matches `*credentials*`. `-like` is case-insensitive in PowerShell so it passes, but matching case helps grep. Ref: `src/lib/VersionDetection.ps1` 401 throw + `tests/VersionDetection.Tests.ps1` assertion. (@misaka-coder, lowest priority)
+- [ ] **N2 — `ServicePointManager.SecurityProtocol` is a global mutation at file-load:** harmless today but document the side-effect explicitly in the file header. Ref: `src/lib/VersionDetection.ps1` top of file. (@misaka-coder, low priority)
+- [ ] **N3 — `StreamReader` not disposed on exception in `Convert-AdminApiException`:** wrap in try/finally. Minor handle leak. Ref: `src/lib/VersionDetection.ps1` body-extraction block. (@misaka-coder, low priority)
+- [ ] **N4 — `[GC]::Collect()` for residual plaintext password:** documented in code; honest comment names the residual risk. File as Phase 4 hardening only if a security audit asks. (@misaka-coder, conditional, earliest Phase 4)
+- [ ] **N6 — Verbose candidate accumulator in `Read-AdminApiVersion`:** works as written, minor simplification possible with early-return foreach. (@mikasa-simplifier, lowest priority — when she's looking for a cut)
+- [ ] **N7 — Optional vs. mandatory `-LogContext`:** every `Write-Log` is `$null`-guarded; cleaner if `-LogContext` were mandatory once Phase 1 entry points exist. Ref: `src/lib/VersionDetection.ps1` all `Write-Log` call sites. (@misaka-coder, earliest PR #4 once entry points land)
+
 ---
 
 ## Later Phases
