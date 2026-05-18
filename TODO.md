@@ -5,6 +5,7 @@ Current phase: 1 (Foundation). See `docs/design/` section 14 for the full timeli
 2026-05-17: PR #1 (Foundation) reviewed and cleared by Hermione; ready to ship. PR #2 (Credentials helpers) is next.
 2026-05-17: PR #2 (Credentials helpers) reviewed and cleared by Hermione (second pass); ready to ship. PR #3 (Detection and pre-flight) is next.
 2026-05-17: PR #3a (Version Detection) reviewed and cleared by Hermione (second pass); ready to ship. PR #3b (pre-flight framework) is next, gated on first green CI run.
+2026-05-17: Josh suggested Admin API-driven discovery (Suggestion 1) and questioned hardcoded test values (Suggestion 2). Ripley filed Suggestion 1 as Phase 4 work; Suggestion 2 closed no-action.
 
 ---
 
@@ -133,6 +134,21 @@ Items Hermione flagged during PR #1 review. Not blocking PR #2.
 - [ ] **N4 — `[GC]::Collect()` for residual plaintext password:** documented in code; honest comment names the residual risk. File as Phase 4 hardening only if a security audit asks. (@misaka-coder, conditional, earliest Phase 4)
 - [ ] **N6 — Verbose candidate accumulator in `Read-AdminApiVersion`:** works as written, minor simplification possible with early-return foreach. (@mikasa-simplifier, lowest priority — when she's looking for a cut)
 - [ ] **N7 — Optional vs. mandatory `-LogContext`:** every `Write-Log` is `$null`-guarded; cleaner if `-LogContext` were mandatory once Phase 1 entry points exist. Ref: `src/lib/VersionDetection.ps1` all `Write-Log` call sites. (@misaka-coder, earliest PR #4 once entry points land)
+- [x] **Josh-suggestion-2 — Hardcoded test versions/paths (2026-05-17)**: Closed no-action. Ripley reviewed every fixture: pattern-based assertions and example-config regression guards are correct as-is. A `$script:TestVersion` constant would not save maintenance. Rationale captured in Ripley's PR #3b kickoff thread.
+
+---
+
+## Phase 4 Tasks (filed 2026-05-17)
+
+Filed but not next — Phase 1 PR #3b is still the active work. Do not promote until Phase 1 ships.
+
+### Admin API discovery (replaces config-driven values where FMS can be queried)
+
+Ripley's call 2026-05-17: API value wins for "host state" (backup folder, admin port reachable, install root, configured schedules). Config wins for "operator intent" (target_version, installer URLs, sequences, max_backup_age_hours). Disagreement on host state is a pre-flight failure with remediation — no silent reconciliation, no `--update-config` auto-rewrite in v0. Multiple-backup case: auto-pick newest backup that satisfies max_backup_age_hours; override via `--backup <id>`; abort (not prompt) if zero qualify.
+
+- [ ] **P4-API-1.** Reconnaissance: walk the SoliantMike FM-Admin-API-Tool repo (https://github.com/SoliantMike/FM-Admin-API-Tool) and Claris docs (https://help.claris.com/en/admin-api-guide/content/index.html). Produce a table of (config key chrysalis reads today, candidate Admin API endpoint, FMS version that introduced it, response shape). Deliverable: a short doc under `docs/design/` or `docs/decisions/` ready for Ariadne's Phase 4 design pass. (@nausicaa-explorer)
+- [ ] **P4-API-2.** ADR-XXX: conflict policy (API vs config) + backup-selection algorithm (auto-pick-newest + `--backup <id>` override). Gated on P4-API-1. (@ariadne-design)
+- [ ] **P4-API-3.** Implementation: extend `src/lib/VersionDetection.ps1` (or a new `src/lib/AdminApiDiscovery.ps1`) with discovery endpoints; wire pre-flight checks to use API values where ADR-XXX dictates; document operator-visible behavior changes in the runbook. Gated on P4-API-1 and P4-API-2. (@misaka-coder)
 
 ---
 
@@ -142,6 +158,6 @@ See SDD §14 for Phases 2-6:
 
 - Phase 2: Upgrade execution
 - Phase 3: Rollback
-- Phase 4: Hardening + first production use (low-stakes client)
+- Phase 4: Hardening + first production use (low-stakes client) + Admin API discovery (see Phase 4 Tasks block above).
 - Phase 5: Cross-platform (macOS + Linux)
 - Phase 6: Polish, multi-machine support (v1 deliverable per Decision 6), Slack notifications (per Decision 9), public v1.0 release (per Decision 8)
