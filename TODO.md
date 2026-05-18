@@ -6,6 +6,7 @@ Current phase: 1 (Foundation). See `docs/design/` section 14 for the full timeli
 2026-05-17: PR #2 (Credentials helpers) reviewed and cleared by Hermione (second pass); ready to ship. PR #3 (Detection and pre-flight) is next.
 2026-05-17: PR #3a (Version Detection) reviewed and cleared by Hermione (second pass); ready to ship. PR #3b (pre-flight framework) is next, gated on first green CI run.
 2026-05-17: Josh suggested Admin API-driven discovery (Suggestion 1) and questioned hardcoded test values (Suggestion 2). Ripley filed Suggestion 1 as Phase 4 work; Suggestion 2 closed no-action.
+2026-05-17: Decision 8 reversed — repo flipped public to enable branch protection; see Decision 8 update + ADR-005.
 
 ---
 
@@ -35,7 +36,7 @@ All 10 bootstrap questions decided. Phase 1 is unblocked. SDD §13 also updated.
    Refuse in v0. Within-major only (e.g. 21.0.3 → 21.0.2). Cross-major rollback hits file-format, Schedules.xml, and plugin compatibility issues that need explicit handling. `-AllowCrossMajor` opt-in is a Phase 4+ feature once those risks are documented.
 
 8. **Public GitHub repo from day 1, or private until v1.0?**
-   Private until v1.0. Matches SDD §14 Phase 6 ("Public GitHub release v1.0"). Reduces premature-polish pressure during Phases 1–3 and keeps early bugs internal.
+   **Decision (reversed 2026-05-17):** ~~Private until v1.0.~~ Public from 2026-05-17. Reversal driven by the need to enable GitHub branch protection on `main` (which requires GitHub Pro or a public repo on personal accounts). Branch protection now enforces: required CI checks (PSScriptAnalyzer + Pester), 1-approval PRs, no force-pushes, no deletions. The "no premature polish" intent of the original decision is unchanged — chrysalis is still pre-v1.0 and is not solicited for community use yet. See ADR-005.
 
 9. **Notifications for v1 - Slack, email, both, or stdout only?**
    Slack webhook only. SMTP/email deferred — build later if a client asks. The SDD plan to ship both in Phase 6 is narrowed to Slack only.

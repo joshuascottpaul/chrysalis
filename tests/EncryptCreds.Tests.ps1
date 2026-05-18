@@ -177,23 +177,23 @@ Describe 'EncryptCreds - Invoke-EncryptCreds end-to-end' -Skip:(-not (Test-IsWin
     }
 }
 
-Describe 'EncryptCreds - Read-ChrysalisCredentialsInternal' -Skip:(-not (Test-IsWindowsHost)) {
+Describe 'EncryptCreds - Read-ChrysalisCredentials' -Skip:(-not (Test-IsWindowsHost)) {
 
-    # Read-ChrysalisCredentialsInternal is a script-scoped helper inside
-    # EncryptCreds.ps1; it is not a public function. These tests reach it via
-    # dot-source scope (Pester's BeforeAll dot-sources EncryptCreds.ps1). The
-    # public-facing read path lands in PR #3 pre-flight 2d (SDD section 6.1).
+    # Read-ChrysalisCredentials is the public read path used by pre-flight 2d
+    # (SDD section 6.1). It was promoted from Read-ChrysalisCredentialsInternal
+    # in PR #3b when the first external consumer landed. Dot-sourced from
+    # EncryptCreds.ps1 in BeforeAll, same as the other tests in this file.
 
     It 'throws a clear error when the creds file is missing' {
         $missing = Join-Path -Path $TestDrive -ChildPath 'no-such-creds.xml'
-        { Read-ChrysalisCredentialsInternal -Path $missing } |
+        { Read-ChrysalisCredentials -Path $missing } |
             Should -Throw -ExpectedMessage "*creds file*not found*EncryptCreds.ps1*"
     }
 
     It 'throws a clear error when the creds file is corrupt' {
         $corrupt = Join-Path -Path $TestDrive -ChildPath 'corrupt-creds.xml'
         Set-Content -LiteralPath $corrupt -Value 'this is not a valid clixml document'
-        { Read-ChrysalisCredentialsInternal -Path $corrupt } |
+        { Read-ChrysalisCredentials -Path $corrupt } |
             Should -Throw -ExpectedMessage "*cannot decrypt creds file*"
     }
 }

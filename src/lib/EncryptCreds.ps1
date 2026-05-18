@@ -204,17 +204,18 @@ function Save-ChrysalisCredentials {
     }
 }
 
-function Read-ChrysalisCredentialsInternal {
+function Read-ChrysalisCredentials {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string] $Path
     )
 
-    # Internal helper. Script-scoped, not for external use. Used only by the
-    # round-trip verification in this script and by tests in the same scope
-    # (dot-sourced). The public-facing read path lands in PR #3 pre-flight 2d
-    # (SDD section 6.1) and will live in its own consumer module.
+    # Public read path used by pre-flight 2d (SDD section 6.1) and any future
+    # consumer. Returns the decrypted PSCredential or throws with operator-
+    # actionable remediation. The previous name was
+    # Read-ChrysalisCredentialsInternal; the consumer-graduation rename
+    # happened in PR #3b when the pre-flight framework landed.
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "chrysalis: creds file '$Path' not found. Run EncryptCreds.ps1 to create it. See docs/runbooks/credentials.md."
     }

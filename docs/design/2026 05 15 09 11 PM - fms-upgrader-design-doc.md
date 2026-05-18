@@ -3,7 +3,7 @@
 **Project:** fms-upgrade (productized as chrysalis)
 **Owner:** Josh / Neo Code
 **Date:** 2026-05-15
-**Status:** Draft v0.4
+**Status:** Draft v0.5
 
 **2026-05-17:** §13 open questions resolved (see §13). Six additional operational decisions captured in TODO.md and reflected in §2, §5, §6.2, §14 below.
 **2026-05-17:** added cross-references to ADR-001/002/003.
@@ -11,6 +11,7 @@
 **2026-05-17:** §10 — added `sudofmsadmin (elevation wrapper)` subsection describing cross-platform behavior (Windows pass-through, macOS/Linux `sudo fmsadmin`). Resolves PR #2 direction per Ripley.
 **2026-05-17:** §5 — documented parser vs. pre-flight separation of concerns for `creds_file` (closes deferred item S6); see ADR-004.
 **2026-05-17:** §6.1 step 2e — added Phase 1 scope clarification narrowing the license check to existence + non-zero size; cross-major license-coverage semantics deferred to Phase 4 (§14) per Ripley, gated operationally by Decision 7 (§13). Scope clarification only; not ADR-worthy.
+**2026-05-17:** Decision 8 reversed — repo flipped public on 2026-05-17 to enable branch protection on `main` (required CI + 1-approval PRs + no force-push + no deletions). §14 Phase 6 updated; §11 already matches the new state. See TODO Decision 8 update and [ADR-005](../decisions/ADR-005-decision-8-reversal-public-repo-during-phase-1.md).
 
 ---
 
@@ -399,7 +400,7 @@ Tasks:
 - Slack webhook notifications
 - Claude for Chrome helper that scrapes the Claris portal for current installer URLs and writes `config.json` automatically
 - Optional: code-signed PowerShell scripts to avoid execution policy friction
-- Public GitHub release v1.0 (repo flips from private to public; see Distribution §11)
+- v1.0 release on the (already-public) GitHub repo. The repo was flipped public on 2026-05-17 during Phase 1 to enable branch protection — see TODO Decision 8 update and [ADR-005](../decisions/ADR-005-decision-8-reversal-public-repo-during-phase-1.md). v1.0 remains the announcement + community-readiness milestone.
 - Announcement on Claris Community + relevant Slack groups
 
 **Deliverable:** v1.0 release with multi-machine support, Slack notifications, and public repo. Blog post or community announcement.
