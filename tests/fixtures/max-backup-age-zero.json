@@ -1,0 +1,20 @@
+{
+  "target_version": "21.0.3",
+  "installers": {
+    "21.0.3": {
+      "windows": "https://example.invalid/installers/fms_21.0.3.exe",
+      "macos": "https://example.invalid/installers/fms_21.0.3.pkg",
+      "linux": "https://example.invalid/installers/fms_21.0.3.rpm",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }
+  },
+  "fms": {
+    "install_root_windows": "C:\\Program Files\\FileMaker\\FileMaker Server",
+    "admin_port": 16001,
+    "creds_file": "C:\\chrysalis\\creds.xml"
+  },
+  "backup_root": "C:\\FMS_Backups",
+  "max_backup_age_hours": 0,
+  "shutdown_sequence": ["SERVER"],
+  "startup_sequence": ["SERVER"]
+}

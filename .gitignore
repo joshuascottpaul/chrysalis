@@ -1,0 +1,36 @@
+# Logs
+logs/
+*.log
+
+# Credentials (DPAPI-encrypted but still local)
+creds.xml
+**/creds.xml
+
+# PowerShell
+*.ps1xml.bak
+
+# macOS
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+ehthumbs.db
+
+# Backups (test runs)
+FMS_Backups/
+backups/
+
+# Installer cache
+installers/
+*.msi
+*.exe.cache
+
+# Test artifacts
+test-results/
+*.coverage
