@@ -4,6 +4,7 @@ Current phase: 1 (Foundation). See `docs/design/` section 14 for the full timeli
 
 2026-05-17: PR #1 (Foundation) reviewed and cleared by Hermione; ready to ship. PR #2 (Credentials helpers) is next.
 2026-05-17: PR #2 (Credentials helpers) reviewed and cleared by Hermione (second pass); ready to ship. PR #3 (Detection and pre-flight) is next.
+2026-05-17: PR #3a (Version Detection) reviewed and cleared by Hermione (second pass); ready to ship. PR #3b (pre-flight framework) is next, gated on first green CI run.
 
 ---
 
@@ -71,11 +72,14 @@ Depend on scaffold + logging interface only. Feed pre-flight check 2d (creds dec
 - [x] **2.** EncryptCreds.ps1 — greenfield, patterns adapted from ernestkoe/powershell-fms with credit (per Decision 1). **Document DPAPI re-encrypt step in this PR** (SDD §15 risk 2) (@misaka-coder)
 - [x] **3.** sudofmsadmin.ps1 — greenfield, patterns adapted from ernestkoe/powershell-fms with credit (per Decision 1) (@misaka-coder)
 
-### PR #3+: Detection and pre-flight (tasks 6, 7, 8)
+### PR #3a: Version Detection (tasks 6, 7) — SHIPPED 2026-05-17
 
-- [ ] **6.** Version detection: binary VersionInfo path (@misaka-coder)
-- [ ] **7.** Version detection: Admin API fallback path — honor system cert store, log clear error on TLS failure, **NO `-SkipCertificateCheck`** (@misaka-coder)
-- [ ] **8.** Pre-flight check framework — all 7 checks from SDD §6.1 step 2 (check 2g uses `max_backup_age_hours`, check 2d uses creds from task 2) (@misaka-coder)
+- [x] **6.** Version detection: binary VersionInfo path (@misaka-coder)
+- [x] **7.** Version detection: Admin API fallback path — honor system cert store, log clear error on TLS failure, **NO `-SkipCertificateCheck`** (@misaka-coder)
+
+### PR #3b: Pre-flight framework (task 8) — gated on first green CI run
+
+- [ ] **8.** Pre-flight check framework — all 7 checks from SDD §6.1 step 2 (check 2g uses `max_backup_age_hours`, check 2d uses creds from task 2, check 2e Phase 1 scope: cert exists + non-zero per SDD §6.1 2e update) (@misaka-coder)
 
 ### PR #4: Dry-run + release (tasks 10, 13, 14, 15)
 
