@@ -136,7 +136,8 @@ The `installers` block lists URLs for the target plus enough historical versions
    2b. Verify config has installer entry for current version (rollback safety)
    2c. Verify config has installer entry for target version
    2d. Verify admin credentials decrypt
-   2e. Verify license covers target version (cross-major check)
+   2e. Verify license covers target version (cross-major check).
+       **Phase 1 scope:** the check verifies only that the FMS license file (`.fmcert`) exists at the configured path and is non-zero in size. Parsing the license file and asserting it actually covers the target version (cross-major coverage semantics) is deferred to Phase 4 (§14, "License validation against target version") and is gated operationally in the interim by Decision 7's v0 refusal of cross-major operations (§13, recorded in TODO.md).
    2f. Verify disk space for installer + backup
    2g. Verify recent native FMS DB backup exists. "Recent" is defined by `config.max_backup_age_hours` (integer hours, default 24). A backup older than this threshold fails pre-flight; remediation is documented in §13 Decision 2 (refuse, prompt operator to run `fmsadmin backup`).
 3. Backup state to {backup_root}\{timestamp}\ (see §8)
