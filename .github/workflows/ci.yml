@@ -26,10 +26,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $targets = @('src', 'tests')
+          $settingsPath = Join-Path $PWD 'PSScriptAnalyzerSettings.psd1'
           $results = @()
           foreach ($t in $targets) {
             if (Test-Path -LiteralPath $t) {
-              $results += Invoke-ScriptAnalyzer -Path $t -Recurse -Severity @('Error','Warning')
+              $results += Invoke-ScriptAnalyzer -Path $t -Recurse -Settings $settingsPath
             }
           }
           if ($results.Count -gt 0) {

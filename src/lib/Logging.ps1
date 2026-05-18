@@ -36,6 +36,16 @@ function New-LogContext {
         }
     }
 
+    # Sanity check: New-Item -ItemType Directory against a path that already
+    # exists as a FILE on Windows does NOT throw — it returns silently. Without
+    # this guard, downstream file open at $LogPath fails with a confusing
+    # "Could not find a part of the path" instead of a clear log-root error.
+    # Also defense-in-depth if New-Item ever returns without producing a real
+    # directory.
+    if (-not (Test-Path -LiteralPath $LogRoot -PathType Container)) {
+        throw "chrysalis: cannot create log root '$LogRoot': path exists but is not a directory."
+    }
+
     $startTime = Get-Date
     $stamp = $startTime.ToString('yyyyMMdd-HHmmss')
     $fileName = "chrysalis-$stamp-$RunId.log"

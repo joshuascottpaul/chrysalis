@@ -12,14 +12,19 @@
 # Admin API tests use Pester Mock to stub Invoke-RestMethod and run on
 # any platform.
 
+# Test-IsWindowsHost lives at file top-level (not inside BeforeAll) because
+# Pester 5 evaluates -Skip parameters on Describe blocks at Discovery time,
+# which runs BEFORE BeforeAll. A function only defined in BeforeAll is
+# unavailable during Discovery and the -Skip expression throws
+# CommandNotFoundException.
+function Test-IsWindowsHost {
+    return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
+}
+
 BeforeAll {
     $script:RepoRoot = Resolve-Path -LiteralPath (Join-Path -Path $PSScriptRoot -ChildPath '..')
     . (Join-Path -Path $script:RepoRoot -ChildPath 'src/lib/Logging.ps1')
     . (Join-Path -Path $script:RepoRoot -ChildPath 'src/lib/VersionDetection.ps1')
-
-    function Test-IsWindowsHost {
-        return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
-    }
 
     function New-TestSecureString {
         param([string] $Plain)

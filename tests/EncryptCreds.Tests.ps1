@@ -6,17 +6,21 @@
 # Linux/macOS leg of the matrix will see these tests as skipped, which is
 # the intended outcome.
 
+# Test-IsWindowsHost lives at file top-level (not inside BeforeAll) because
+# Pester 5 evaluates -Skip parameters on Describe blocks at Discovery time,
+# which runs BEFORE BeforeAll. A function only defined in BeforeAll is
+# unavailable during Discovery and the -Skip expression throws
+# CommandNotFoundException. PS 5.1 lacks $IsWindows; the Platform check
+# works on both PS 5.1 and PS 7+ without needing the automatic variable.
+function Test-IsWindowsHost {
+    return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
+}
+
 BeforeAll {
     $script:RepoRoot = Resolve-Path -LiteralPath (Join-Path -Path $PSScriptRoot -ChildPath '..')
     . (Join-Path -Path $script:RepoRoot -ChildPath 'src/lib/Logging.ps1')
     . (Join-Path -Path $script:RepoRoot -ChildPath 'src/lib/Config.ps1')
     . (Join-Path -Path $script:RepoRoot -ChildPath 'src/lib/EncryptCreds.ps1')
-
-    function Test-IsWindowsHost {
-        # PS 5.1 lacks $IsWindows. The Platform check works on both PS 5.1
-        # and PS 7+ without needing the automatic variable.
-        return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
-    }
 
     function New-TestSecureString {
         param([string] $Plain)
