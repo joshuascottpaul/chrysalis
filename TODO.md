@@ -7,6 +7,7 @@ Current phase: 1 (Foundation). See `docs/design/` section 14 for the full timeli
 2026-05-17: PR #3a (Version Detection) reviewed and cleared by Hermione (second pass); ready to ship. PR #3b (pre-flight framework) is next, gated on first green CI run.
 2026-05-17: Josh suggested Admin API-driven discovery (Suggestion 1) and questioned hardcoded test values (Suggestion 2). Ripley filed Suggestion 1 as Phase 4 work; Suggestion 2 closed no-action.
 2026-05-17: Decision 8 reversed — repo flipped public to enable branch protection; see Decision 8 update + ADR-005.
+2026-05-18: PR #3b (Pre-flight framework, task 8) merged to main via PR https://github.com/joshuascottpaul/chrysallis/pull/1; ready for PR #4 (dry-run + release). Phase 1 task list now needs only PR #4 to ship v0.1.0.
 
 ---
 
@@ -79,11 +80,11 @@ Depend on scaffold + logging interface only. Feed pre-flight check 2d (creds dec
 - [x] **6.** Version detection: binary VersionInfo path (@misaka-coder)
 - [x] **7.** Version detection: Admin API fallback path — honor system cert store, log clear error on TLS failure, **NO `-SkipCertificateCheck`** (@misaka-coder)
 
-### PR #3b: Pre-flight framework (task 8) — gated on first green CI run
+### PR #3b: Pre-flight framework (task 8) — SHIPPED 2026-05-18
 
-- [ ] **8.** Pre-flight check framework — all 7 checks from SDD §6.1 step 2 (check 2g uses `max_backup_age_hours`, check 2d uses creds from task 2, check 2e Phase 1 scope: cert exists + non-zero per SDD §6.1 2e update) (@misaka-coder)
+- [x] **8.** Pre-flight check framework — all 7 checks from SDD §6.1 step 2 (check 2g uses `max_backup_age_hours`, check 2d uses creds from task 2, check 2e Phase 1 scope: cert exists + non-zero per SDD §6.1 2e update) (@misaka-coder)
 
-### PR #4: Dry-run + release (tasks 10, 13, 14, 15)
+### PR #4: Dry-run + release (tasks 10, 13, 14, 15) — NEXT
 
 - [ ] **10.** Dry-run mode flag and reporting (logging consumer) (@misaka-coder)
 - [ ] **13.** Code review pass (@hermione-reviewer)
@@ -136,6 +137,15 @@ Items Hermione flagged during PR #1 review. Not blocking PR #2.
 - [ ] **N6 — Verbose candidate accumulator in `Read-AdminApiVersion`:** works as written, minor simplification possible with early-return foreach. (@mikasa-simplifier, lowest priority — when she's looking for a cut)
 - [ ] **N7 — Optional vs. mandatory `-LogContext`:** every `Write-Log` is `$null`-guarded; cleaner if `-LogContext` were mandatory once Phase 1 entry points exist. Ref: `src/lib/VersionDetection.ps1` all `Write-Log` call sites. (@misaka-coder, earliest PR #4 once entry points land)
 - [x] **Josh-suggestion-2 — Hardcoded test versions/paths (2026-05-17)**: Closed no-action. Ripley reviewed every fixture: pattern-based assertions and example-config regression guards are correct as-is. A `$script:TestVersion` constant would not save maintenance. Rationale captured in Ripley's PR #3b kickoff thread.
+
+### From PR #3b review (Hermione, 2026-05-18)
+
+Hermione's blocking and should-fix items (S1 2d Test-Path pre-check, S2 GiB labeling, N3 sort multi-file Detail, N5 path in 2d Pass Detail) were all addressed in PR #3b's review-fix commit and are closed. Only the four nits Misaka punted on are filed below.
+
+- [ ] **N2 — `Get-PreFlightDriveRoot` non-Windows fallback wording:** returns the full input path when no drive letter is exposed, producing odd Detail strings like "install root drive '/var/lib/fms'". Phase 5 concern only. Ref: `src/lib/PreFlight.ps1` `Get-PreFlightDriveRoot`. (@misaka-coder, earliest Phase 5)
+- [ ] **N4 — `New-PreFlightCheckException` defined after first use:** PowerShell resolves at call time so it works, but top-to-bottom readers hit the calls before the definitions. Reorder for readability. Ref: `src/lib/PreFlight.ps1` lines ~461 and ~479. (@misaka-coder or @mikasa-simplifier, lowest priority)
+- [ ] **N6 — 2g remediation should quote the full `fmsadmin backup` invocation:** currently just says "Run 'fmsadmin backup'". Quote the actual recommended invocation with `-y -d <path> -t <name>` so the operator can copy-paste. Ref: `src/lib/PreFlight.ps1` 2g Fail Remediation. (@shizuku-docs, low priority)
+- [ ] **N7 — 2c's "file a bug" Remediation should name the bug tracker:** add `https://github.com/joshuascottpaul/chrysallis/issues` to the remediation text. Ref: `src/lib/PreFlight.ps1` 2c Remediation. (@misaka-coder, low priority)
 
 ---
 
