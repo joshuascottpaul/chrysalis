@@ -265,6 +265,12 @@ if ($MyInvocation.InvocationName -ne '.' -and $MyInvocation.InvocationName -ne '
     # Strict-only gate. Refuse any invocation that does not pass -DryRun. The
     # check lives inside the auto-invocation guard so dot-source-and-call from
     # tests does not trip it. See ADR-003: safety beats convenience in v0.
+    # Caveat (Hermione PR #4 N2, deferred for a dedicated turn): the dot-source
+    # statements above run BEFORE this gate, so non-DryRun invocations still
+    # execute lib top-level code. The libs are inert (functions + EncryptCreds'
+    # own param block, all non-destructive). A future refactor should move
+    # this gate ahead of dot-sourcing if any lib gains destructive top-level
+    # side effects.
     if (-not $script:EntryDryRun) {
         $refusal = "chrysalis: Phase 1 only supports -DryRun mode. Pass -DryRun to inspect what would happen. Upgrade execution (without -DryRun) lands in Phase 2."
         [Console]::Error.WriteLine($refusal)

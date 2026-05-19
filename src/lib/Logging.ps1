@@ -81,7 +81,11 @@ function New-LogContext {
         Closed    = $false
     }
 
-    Write-LogInternal -Context $context -Severity 'Info' -Message "Session start. RunId=$RunId LogPath=$logPath"
+    # Deliberately do NOT emit a "Session start" line here. The entry-point
+    # banner (chrysalis.ps1) already records RunId / LogPath as its first lines,
+    # and the spec requires the banner to be the literal first line of the log
+    # file. Close-LogContext still writes a Session-end line with elapsed
+    # seconds, which is the surviving session-boundary marker.
     return $context
 }
 

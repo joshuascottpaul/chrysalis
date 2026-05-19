@@ -261,6 +261,45 @@ Describe 'Invoke-ChrysalisDryRun happy path' {
         Mock -CommandName Stop-FmsService -MockWith { throw 'should not be called' }
         Mock -CommandName Invoke-FmsInstaller -MockWith { throw 'should not be called' }
 
+        # Belt-and-braces: also mock the REAL destructive cmdlets that a future
+        # refactor could accidentally wire into the dry-run path. The Phase 2
+        # stub names above might be renamed; these built-in names will not.
+        # MockWith throws are the loud-failure rail: if the dry-run ever
+        # actually calls one, the test fails with a named destructive cmdlet.
+        #
+        # *-Service cmdlets ship only with Windows PowerShell. Define no-op
+        # global function shims when running on a non-Windows host so Mock has
+        # a target. The shims have the same semantics for this test (we
+        # confirm zero invocations); on Windows the real cmdlet is mocked
+        # instead. The shim path is gated so we know to clean them up below.
+        $script:DestructiveCmdletShimsDefined = $false
+        if (-not (Get-Command -Name Stop-Service -ErrorAction SilentlyContinue)) {
+            function global:Stop-Service { param([Parameter(ValueFromRemainingArguments = $true)] $Rest) }
+            function global:Start-Service { param([Parameter(ValueFromRemainingArguments = $true)] $Rest) }
+            function global:Set-Service { param([Parameter(ValueFromRemainingArguments = $true)] $Rest) }
+            $script:DestructiveCmdletShimsDefined = $true
+        }
+        Mock -CommandName Stop-Service -MockWith { throw 'destructive: Stop-Service was called from dry-run path' }
+        Mock -CommandName Start-Service -MockWith { throw 'destructive: Start-Service was called from dry-run path' }
+        Mock -CommandName Invoke-WebRequest -MockWith { throw 'destructive: Invoke-WebRequest was called from dry-run path' }
+        Mock -CommandName Start-Process -MockWith { throw 'destructive: Start-Process was called from dry-run path' }
+        # Filter excludes Function:\ paths so the finally-block cleanup below
+        # (which deletes the Phase 2 stub functions) does not trip the throw.
+        # Pester's ParameterFilter binds positional parameters to the automatic
+        # variables ($Path, $LiteralPath) but does NOT populate $PSBoundParameters
+        # the way a regular advanced function does. Inspect the variables
+        # directly. -notlike on an empty string against 'Function:*' is $true,
+        # so an empty $Path falls through to the throw — which is correct: any
+        # Remove-Item without a Function: path is a destructive call we want
+        # to surface.
+        Mock -CommandName Remove-Item -ParameterFilter {
+            $candidate = ''
+            if (-not [string]::IsNullOrEmpty([string]$Path)) { $candidate = [string]$Path }
+            elseif (-not [string]::IsNullOrEmpty([string]$LiteralPath)) { $candidate = [string]$LiteralPath }
+            return ($candidate -notlike 'Function:*')
+        } -MockWith { throw 'destructive: Remove-Item was called from dry-run path' }
+        Mock -CommandName Set-Service -MockWith { throw 'destructive: Set-Service was called from dry-run path' }
+
         try {
             $code = Invoke-ChrysalisDryRun -ConfigPath $script:cfgPath -LogRoot $script:logRoot -ScriptRoot $script:scriptRoot
             $code | Should -Be 0
@@ -268,11 +307,70 @@ Describe 'Invoke-ChrysalisDryRun happy path' {
             Should -Invoke -CommandName Invoke-Backup -Times 0
             Should -Invoke -CommandName Stop-FmsService -Times 0
             Should -Invoke -CommandName Invoke-FmsInstaller -Times 0
+
+            Should -Invoke -CommandName Stop-Service -Times 0 -Scope It
+            Should -Invoke -CommandName Start-Service -Times 0 -Scope It
+            Should -Invoke -CommandName Invoke-WebRequest -Times 0 -Scope It
+            Should -Invoke -CommandName Start-Process -Times 0 -Scope It
+            Should -Invoke -CommandName Remove-Item -Times 0 -Scope It
+            Should -Invoke -CommandName Set-Service -Times 0 -Scope It
         } finally {
             Remove-Item Function:\Invoke-Backup -ErrorAction SilentlyContinue
             Remove-Item Function:\Stop-FmsService -ErrorAction SilentlyContinue
             Remove-Item Function:\Invoke-FmsInstaller -ErrorAction SilentlyContinue
+            if ($script:DestructiveCmdletShimsDefined) {
+                Remove-Item Function:\Stop-Service -ErrorAction SilentlyContinue
+                Remove-Item Function:\Start-Service -ErrorAction SilentlyContinue
+                Remove-Item Function:\Set-Service -ErrorAction SilentlyContinue
+            }
         }
+    }
+
+    It 'continues into pre-flight when Read-ChrysalisCredentials throws (first-run path)' {
+        # First-run scenario: chrysalis has just been dropped on a host and the
+        # operator has not yet executed EncryptCreds.ps1. The orchestration
+        # body catches the throw, logs Warn + Remediation, and continues into
+        # pre-flight so 2d surfaces the structured failure. Exit code should
+        # be 1 (pre-flight fails because creds are unavailable).
+        Mock -CommandName Read-ChrysalisConfig -MockWith { return $script:testConfig }
+        Mock -CommandName Read-ChrysalisCredentials -MockWith { throw 'creds file not found' }
+
+        # Capture whether Invoke-PreFlight was called and what credential it
+        # received (should be $null when Read-ChrysalisCredentials threw).
+        $script:preFlightCalled = $false
+        $script:preFlightCredential = 'unset'
+        Mock -CommandName Invoke-PreFlight -MockWith {
+            $script:preFlightCalled = $true
+            $script:preFlightCredential = $Credential
+            return @(
+                (New-PassResult -Id '2a' -Name 'Detect current installed FMS version'),
+                (New-FailResult -Id '2d' -Name 'Verify admin credentials decrypt' `
+                    -Detail "Credentials file 'C:\chrysalis\creds.xml' not found." `
+                    -Remediation 'Run .\EncryptCreds.ps1 to create the credentials file. See docs/runbooks/credentials.md.')
+            )
+        }
+
+        $code = Invoke-ChrysalisDryRun -ConfigPath $script:cfgPath -LogRoot $script:logRoot -ScriptRoot $script:scriptRoot
+        $code | Should -Be 1
+
+        # Pre-flight ran (the credential failure did NOT short-circuit the
+        # dry-run); the captured -Credential argument was $null.
+        $script:preFlightCalled | Should -BeTrue
+        $script:preFlightCredential | Should -BeNullOrEmpty
+        Should -Invoke -CommandName Invoke-PreFlight -Times 1 -Scope It
+
+        $logFile = (Get-ChildItem -LiteralPath $script:logRoot -Filter 'chrysalis-*.log' -File | Select-Object -First 1).FullName
+        $logFile | Should -Not -BeNullOrEmpty
+        $content = Get-Content -LiteralPath $logFile -Raw
+
+        # Warn line names the read failure and carries the inner exception text.
+        $content | Should -Match '\[WARN\] .*Could not read admin credentials: creds file not found'
+
+        # Remediation pointer to the credentials runbook is present, verbatim
+        # from chrysalis.ps1's Remediation message.
+        $content | Should -Match 'Run \.\\src\\lib\\EncryptCreds\.ps1 to create the credentials file'
+        $content | Should -Match 'docs/runbooks/credentials\.md'
+        $content | Should -Match '\[REMEDIATION\]'
     }
 
     It 'never writes the credential password to the log file (sentinel containment)' {
