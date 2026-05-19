@@ -1,5 +1,40 @@
 # chrysalis TODO
 
+## >>> RESUME HERE — Task 15: manual `-DryRun` on a Windows FMS test host
+
+**Phase 1 code is complete and on `main`.** Only one thing remains before `v0.1.0` ships: an operator-side verification that `chrysalis.ps1 -DryRun` runs end-to-end on a real Windows FMS host. Everything else has been built, reviewed, and merged.
+
+**What to do in the next session:**
+
+1. Open an SSH session (or RDP) to the Windows FMS test host.
+2. From a working directory on that host:
+   ```powershell
+   git clone https://github.com/joshuascottpaul/chrysalis.git
+   cd chrysalis
+   # Copy config/config.example.json to config.json at the repo root.
+   # Edit it: target_version, installers entry for current installed version,
+   # fms.install_root_windows, fms.admin_port, fms.creds_file, backup_root.
+   .\src\lib\EncryptCreds.ps1          # one-time: prompts for admin creds, writes DPAPI creds.xml
+   .\chrysalis.ps1 -DryRun             # the moment of truth
+   ```
+3. Confirm:
+   - Banner `chrysalis DryRun starting` is the first log line.
+   - `Get-FmsVersion` reports the installed version (binary VersionInfo path).
+   - Seven pre-flight check lines `2a-2g`, each tagged Pass / Fail / Skip.
+   - "Planned upgrade steps" block enumerating shutdown / install / startup / smoke-test sequences.
+   - Final summary + exit code (0 if all pre-flight passed).
+4. If anything misbehaves, dispatch Clarice (debugger) for root cause and Misaka (coder) for the fix.
+5. When the dry-run is clean, dispatch Leia to cut `v0.1.0`:
+   ```bash
+   gh release create v0.1.0 --title "v0.1.0 — Phase 1: Foundation (dry-run only)" --notes "..."
+   ```
+
+**If you need a recap of how we got here**, read the dated entries below + the per-PR sections + `docs/decisions/ADR-001..005`. The SDD at `docs/design/2026 05 15 09 11 PM - fms-upgrader-design-doc.md` is the canonical contract.
+
+---
+
+## Phase tracker
+
 Current phase: 1 (Foundation). See `docs/design/` section 14 for the full timeline.
 Phase 1 code complete; v0.1.0 awaits the task-15 manual -DryRun verification on a test FMS host.
 

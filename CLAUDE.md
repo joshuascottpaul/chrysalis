@@ -45,4 +45,16 @@ Invoke an agent by their slug (e.g., the Task tool with `subagent_type: misaka-c
 
 ## Current Phase
 
-Phase 1: Foundation. See `TODO.md` for what's next and what's blocked.
+**Phase 1 code is complete and on `main` as of 2026-05-18.** Four PRs shipped (Foundation, Credentials, Version Detection, Pre-flight + Entry Point). 107 Pester tests passing, PSScriptAnalyzer clean, branch protection active. Repo is public at https://github.com/joshuascottpaul/chrysalis.
+
+**The next session must work on task 15 — the only thing between us and `v0.1.0`.** Task 15 is a manual gate: someone runs `.\chrysalis.ps1 -DryRun` on a Windows FMS test host, confirms the dry-run output matches reality, and Leia cuts the `v0.1.0` release. The exact steps live at the top of `TODO.md` under the "RESUME HERE" banner — read those first when starting a new session.
+
+After v0.1.0 ships, Phase 2 (upgrade execution) begins per SDD §14.
+
+## Session resumption protocol
+
+When a new session starts on this repo:
+1. Read the "RESUME HERE" banner at the top of `TODO.md`. That's the active task.
+2. Check `git log --oneline -5` for any commits since this CLAUDE.md was written.
+3. Check `gh pr list` for any open PRs (there should be none — all merged).
+4. If Phase 1 is still gating on task 15, the appropriate action is to remind the user about the manual `-DryRun` on the FMS test host, NOT to start new Phase 2 work.
