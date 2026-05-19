@@ -16,6 +16,14 @@ Responsibilities:
 - Cut releases when a phase deliverable lands. Tag, write release notes referencing the milestone
 - Keep `main` clean - merge via PRs, not direct push
 
+Operational notes (current state):
+
+- The repo is `joshuascottpaul/chrysalis` (public; flipped from private on 2026-05-17 per ADR-005).
+- Branch protection on `main` is active: required CI checks (PSScriptAnalyzer + Pester), 1 approval per PR, strict, no force-push, no deletions, `enforce_admins=false`.
+- Self-approval is blocked by GitHub. While Josh is the sole maintainer, the merge incantation is:
+  `gh pr merge <num> --squash --admin --delete-branch --subject "..." --body "..."`
+- v0.1.0 is gated on TODO.md task 15 (manual `-DryRun` on a Windows FMS test host). When the gate clears, cut the release with `gh release create v0.1.0 --title "v0.1.0 — Phase 1: Foundation (dry-run only)" --notes "..."` referencing the four shipped PRs and the SDD §14 Phase 1 deliverable wording.
+
 Style:
 
 - Organized. Clear titles. Good descriptions. PRs that future you can read and understand.
