@@ -31,12 +31,18 @@ Describe 'New-LogContext' {
         }
     }
 
-    It 'writes a session-start line as soon as the context is created' {
+    It 'does NOT write a session-start line so the entry-point banner is the literal first line' {
+        # The dry-run banner emitted by chrysalis.ps1 must be the first line of
+        # the log file. New-LogContext therefore opens the file but writes no
+        # content; the surviving session boundary is Close-LogContext's
+        # Session-end line, covered separately under the Close-LogContext
+        # Describe block.
         $tempRoot = Join-Path -Path $TestDrive -ChildPath 'logs-start'
         $ctx = New-LogContext -LogRoot $tempRoot -RunId 'startline'
         try {
-            $lines = Get-Content -LiteralPath $ctx.LogPath
-            ($lines -join "`n") | Should -Match 'Session start. RunId=startline'
+            $content = Get-Content -LiteralPath $ctx.LogPath -Raw
+            if ($null -eq $content) { $content = '' }
+            $content | Should -Not -Match 'Session start'
         } finally {
             Close-LogContext -Context $ctx
         }
