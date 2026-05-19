@@ -1,6 +1,7 @@
 # chrysalis TODO
 
 Current phase: 1 (Foundation). See `docs/design/` section 14 for the full timeline.
+Phase 1 code complete; v0.1.0 awaits the task-15 manual -DryRun verification on a test FMS host.
 
 2026-05-17: PR #1 (Foundation) reviewed and cleared by Hermione; ready to ship. PR #2 (Credentials helpers) is next.
 2026-05-17: PR #2 (Credentials helpers) reviewed and cleared by Hermione (second pass); ready to ship. PR #3 (Detection and pre-flight) is next.
@@ -8,6 +9,7 @@ Current phase: 1 (Foundation). See `docs/design/` section 14 for the full timeli
 2026-05-17: Josh suggested Admin API-driven discovery (Suggestion 1) and questioned hardcoded test values (Suggestion 2). Ripley filed Suggestion 1 as Phase 4 work; Suggestion 2 closed no-action.
 2026-05-17: Decision 8 reversed — repo flipped public to enable branch protection; see Decision 8 update + ADR-005.
 2026-05-18: PR #3b (Pre-flight framework, task 8) merged to main via PR https://github.com/joshuascottpaul/chrysalis/pull/1; ready for PR #4 (dry-run + release). Phase 1 task list now needs only PR #4 to ship v0.1.0.
+2026-05-18: PR #4 (chrysalis.ps1 entry point + README) merged to main via PR https://github.com/joshuascottpaul/chrysalis/pull/2. Tasks 10 and 14 done. Task 13 (Hermione review) absorbed into the PR review pass. Phase 1 code complete; v0.1.0 awaits the manual -DryRun verification on a test FMS host (task 15).
 
 ---
 
@@ -84,12 +86,13 @@ Depend on scaffold + logging interface only. Feed pre-flight check 2d (creds dec
 
 - [x] **8.** Pre-flight check framework — all 7 checks from SDD §6.1 step 2 (check 2g uses `max_backup_age_hours`, check 2d uses creds from task 2, check 2e Phase 1 scope: cert exists + non-zero per SDD §6.1 2e update) (@misaka-coder)
 
-### PR #4: Dry-run + release (tasks 10, 13, 14, 15) — NEXT
+### PR #4: Dry-run + release (tasks 10, 13, 14, 15) — IN PROGRESS (task 15 manual gate pending)
 
-- [ ] **10.** Dry-run mode flag and reporting (logging consumer) (@misaka-coder)
-- [ ] **13.** Code review pass (@hermione-reviewer)
-- [ ] **14.** README update reflecting Phase 1 capabilities (@shizuku-docs)
+- [x] **10.** Dry-run mode flag and reporting (logging consumer) (@misaka-coder)
+- [x] **13.** Code review pass (@hermione-reviewer) — absorbed into PR #4 review pass
+- [x] **14.** README update reflecting Phase 1 capabilities (@shizuku-docs)
 - [ ] **15.** Cut tag v0.1.0 once dry-run mode works on a test host (@leia-github)
+  - **Manual gate**: someone runs `.\chrysalis.ps1 -DryRun` from the repo root on a Windows FMS test host with a real `config.json` and DPAPI-encrypted `creds.xml`. Confirms (a) the entry point loads without errors, (b) the seven pre-flight checks execute against real FMS state, (c) the "would happen next" report is accurate. After verification, @leia-github cuts `v0.1.0` via `gh release create v0.1.0 --title "v0.1.0" --notes "..."`.
 
 ---
 
@@ -146,6 +149,16 @@ Hermione's blocking and should-fix items (S1 2d Test-Path pre-check, S2 GiB labe
 - [ ] **N4 — `New-PreFlightCheckException` defined after first use:** PowerShell resolves at call time so it works, but top-to-bottom readers hit the calls before the definitions. Reorder for readability. Ref: `src/lib/PreFlight.ps1` lines ~461 and ~479. (@misaka-coder or @mikasa-simplifier, lowest priority)
 - [ ] **N6 — 2g remediation should quote the full `fmsadmin backup` invocation:** currently just says "Run 'fmsadmin backup'". Quote the actual recommended invocation with `-y -d <path> -t <name>` so the operator can copy-paste. Ref: `src/lib/PreFlight.ps1` 2g Fail Remediation. (@shizuku-docs, low priority)
 - [ ] **N7 — 2c's "file a bug" Remediation should name the bug tracker:** add `https://github.com/joshuascottpaul/chrysalis/issues` to the remediation text. Ref: `src/lib/PreFlight.ps1` 2c Remediation. (@misaka-coder, low priority)
+
+### From PR #4 review (Hermione, 2026-05-18)
+
+- [ ] **N1 — `$script:LibRoot` collision with EncryptCreds.ps1 dot-source:** chrysalis.ps1 sets `$script:LibRoot` then dot-sources EncryptCreds.ps1 which rebinds `$script:LibRoot` and `$script:ProjectRoot` to the same scope. Harmless today (values are equivalent). Rename chrysalis.ps1's variable to `$script:ChrysalisLibRoot` for explicit non-collision, or add a one-line comment near the dot-source acknowledging the intentional rebind. Ref: `chrysalis.ps1` around lines 52, 56; `src/lib/EncryptCreds.ps1:38-39`. (@misaka-coder, lowest priority)
+- [ ] **N3 — Duplicate stderr write on unhandled exception:** chrysalis.ps1 logs an Error (which writes to stderr via Logging) and then also writes a brief stderr line directly. Defensive but produces two lines per exception. Either gate the second write on "first write failed" or accept and comment. Ref: `chrysalis.ps1` around lines 240, 248. (@misaka-coder, low priority)
+- [ ] **N4 — Config path is not Resolve-Path normalized in log lines:** `Read-ChrysalisConfig` accepts any path, but the log shows whatever string was passed (relative paths included). `(Resolve-Path -LiteralPath $path).ProviderPath` would give fully-qualified paths in logs, friendlier for operator paste-into-issue. Ref: `chrysalis.ps1` `Resolve-ChrysalisEntryConfigPath`. (@misaka-coder, low priority)
+- [ ] **N5 — Test config's shutdown_sequence is shorter than SDD canonical (3 vs 7 items):** `tests/Chrysalis.Tests.ps1` uses a stub `@('FMSTB', 'FMSE', 'SERVER')`. Test correctness unchanged (asserts config flows through, not specific values). Stronger as documentation if it matched the SDD sequence. Ref: `tests/Chrysalis.Tests.ps1` happy-path config builder. (@kaylee-tests, lowest priority)
+- [ ] **N6 — Unused `Test-IsWindowsHost` in `tests/Chrysalis.Tests.ps1`:** kept at file top as documentation per pattern. PSScriptAnalyzer might flag on a future stricter ruleset. Reference it once in a no-op Skip block or annotate explicitly. (@misaka-coder, lowest priority)
+- [ ] **PSScriptAnalyzer `Write-Log` redefinition warning (Misaka flag):** PowerShell Core 6.1+ has a built-in `Write-Log`; our redefinition is flagged when PSSA runs on pwsh. CI runs Windows PowerShell 5.1 so the rule doesn't fire there, but local pwsh PSSA runs will. Either rename to `Write-ChrysalisLog` everywhere (large rename, breaks lots of call sites) or add an exclusion to `PSScriptAnalyzerSettings.psd1` if confirmed it's not firing in CI. Ref: `src/lib/Logging.ps1` `Write-Log` function definition. (@ripley-tech-lead decides + @misaka-coder if rename, lowest priority)
+- [ ] **Pester ParameterFilter does not populate `$PSBoundParameters` (Misaka flag, for the test-conventions doc backlog):** Pester filters bind positional args directly to `$Path` / `$LiteralPath` etc. — `$PSBoundParameters.ContainsKey('Path')` is always false in filter context. Worth capturing in a future testing conventions doc so it doesn't trip the next test author. (@kaylee-tests when she writes the conventions doc, lowest priority)
 
 ---
 
